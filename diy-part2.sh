@@ -54,4 +54,17 @@ for cfg in \
     grep -q "^${cfg}=y" .config || echo "${cfg}=y" >> .config
 done
 
+# ===== 强制安装 23.05 LuCI 所需的 ucode 模块 =====
+for pkg in ucode-mod-log ucode-mod-socket; do
+    ./scripts/feeds install -f "$pkg"
+done
+
+# 如果上面提示 unknown package，尝试从 luci feed 全局重装
+if ./scripts/feeds install -f ucode-mod-log 2>&1 | grep -q "unknown package"; then
+    ./scripts/feeds install -a -p luci
+fi
+
+# 确保 cpufreq 被选中
+grep -q '^CONFIG_PACKAGE_cpufreq=y' .config || echo 'CONFIG_PACKAGE_cpufreq=y' >> .config
+
 echo "===== diy-part2.sh 执行完毕 ====="

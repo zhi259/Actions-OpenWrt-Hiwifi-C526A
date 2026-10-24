@@ -65,7 +65,3 @@ if ! [ -d package/feeds/packages/ucode-mod-log ]; then
     echo "尝试从 packages feed 安装 ucode-mod-log..."
     ./scripts/feeds install -a -p packages 2>/dev/null || true
 fi
-
-# 确保 cpufreq 内核配置存在（luci-app-cpufreq 的硬依赖）
-echo "CONFIG_CPU_FREQ=y" >> target/linux/ipq40xx/config-5.4
-echo "CONFIG_CPU_FREQ_GOV_ONDEMAND=y" >> target/linux/ipq40xx/config-5.4

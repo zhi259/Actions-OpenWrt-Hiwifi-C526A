@@ -12,3 +12,10 @@ sed -i 's/luci-theme-bootstrap/luci-theme-argon/g' feeds/luci/collections/luci-n
 
 # 核心修复：全局降级 CMake 版本要求，彻底解决 rpcd-mod-luci 报错
 grep -rl 'cmake_minimum_required(VERSION 3.31)' feeds/ | xargs sed -i 's/cmake_minimum_required(VERSION 3.31)/cmake_minimum_required(VERSION 3.25)/g' 2>/dev/null || true
+
+# 修复 haproxy 的 QUIC/OpenSSL 编译错误
+HAPROXY_MAKEFILE="feeds/packages/net/haproxy/Makefile"
+if [ -f "$HAPROXY_MAKEFILE" ]; then
+    sed -i 's/USE_QUIC=1/USE_QUIC=0/g' "$HAPROXY_MAKEFILE"
+    sed -i 's/ USE_QUIC_OPENSSL_COMPAT=1//g' "$HAPROXY_MAKEFILE"
+fi

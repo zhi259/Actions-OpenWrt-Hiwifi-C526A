@@ -44,27 +44,28 @@ echo "===== [4/5] 从 passwall_packages 源批量强制重新安装 ====="
 ./scripts/feeds install -f luci-app-passwall2
 
 echo "===== [5/5] 补全 .config 缺失依赖 ====="
-# ucode-mod-log    → luci-base 依赖
-# ucode-mod-socket → luci-mod-status 依赖
-# cpufreq          → luci-app-cpufreq 依赖
+# 直接写入 .config，不依赖 feeds install 的返回值
 for cfg in \
+    CONFIG_PACKAGE_ucode \
+    CONFIG_PACKAGE_ucode-mod-fs \
     CONFIG_PACKAGE_ucode-mod-log \
     CONFIG_PACKAGE_ucode-mod-socket \
+    CONFIG_PACKAGE_ucode-mod-uci \
+    CONFIG_PACKAGE_ucode-mod-ubus \
     CONFIG_PACKAGE_cpufreq; do
     grep -q "^${cfg}=y" .config || echo "${cfg}=y" >> .config
 done
 
-# ===== 强制安装 23.05 LuCI 所需的 ucode 模块 =====
-for pkg in ucode-mod-log ucode-mod-socket; do
-    ./scripts/feeds install -f "$pkg"
-done
+# 容错地尝试从 feeds 安装 ucode 模块（失败不退出）
+./scripts/feeds install -f ucode-mod-log 2>/dev/null || true
+./scripts/feeds install -f ucode-mod-socket 2>/dev/null || true
 
-# 如果上面提示 unknown package，尝试从 luci feed 全局重装
-if ./scripts/feeds install -f ucode-mod-log 2>&1 | grep -q "unknown package"; then
-    ./scripts/feeds install -a -p luci
+# 如果 ucode-mod-log 仍然缺失，从 packages feed 全局安装
+if ! [ -d package/feeds/packages/ucode-mod-log ]; then
+    echo "尝试从 packages feed 安装 ucode-mod-log..."
+    ./scripts/feeds install -a -p packages 2>/dev/null || true
 fi
 
-# 确保 cpufreq 被选中
-grep -q '^CONFIG_PACKAGE_cpufreq=y' .config || echo 'CONFIG_PACKAGE_cpufreq=y' >> .config
-
-echo "===== diy-part2.sh 执行完毕 ====="
+# 确保 cpufreq 内核配置存在（luci-app-cpufreq 的硬依赖）
+echo "CONFIG_CPU_FREQ=y" >> target/linux/ipq40xx/config-5.4
+echo "CONFIG_CPU_FREQ_GOV_ONDEMAND=y" >> target/linux/ipq40xx/config-5.4

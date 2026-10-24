@@ -12,5 +12,8 @@ rm -rf feeds/kenzo/luci-theme-argon
 sed -i 's/luci-theme-bootstrap/luci-theme-argon/g' feeds/luci/collections/luci/Makefile
 sed -i 's/luci-theme-bootstrap/luci-theme-argon/g' feeds/luci/collections/luci-nginx/Makefile 2>/dev/null || true
 
+# 降级 rpcd-mod-luci 的 CMake 版本要求，兼容 Actions 环境
+sed -i 's/cmake_minimum_required(VERSION 3.31)/cmake_minimum_required(VERSION 3.25)/' feeds/luci/libs/rpcd-mod-luci/CMakeLists.txt
+
 # PassWall2 编译时如果 geoview 冲突，取消下面这行注释
 # rm -rf feeds/packages/net/geoview

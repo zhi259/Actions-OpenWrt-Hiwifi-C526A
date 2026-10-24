@@ -7,3 +7,5 @@ echo 'src-git passwall_packages https://github.com/Openwrt-Passwall/openwrt-pass
 
 # kenzo 源，提供其他 LuCI 应用和依赖
 echo 'src-git kenzo https://github.com/kenzok8/openwrt-packages' >>feeds.conf.default
+
+src-git luci https://github.com/coolsnowwolf/luci

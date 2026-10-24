@@ -12,8 +12,11 @@ rm -rf feeds/kenzo/luci-theme-argon
 sed -i 's/luci-theme-bootstrap/luci-theme-argon/g' feeds/luci/collections/luci/Makefile
 sed -i 's/luci-theme-bootstrap/luci-theme-argon/g' feeds/luci/collections/luci-nginx/Makefile 2>/dev/null || true
 
-# 降级 rpcd-mod-luci 的 CMake 版本要求，兼容 Actions 环境
-sed -i 's/cmake_minimum_required(VERSION 3.31)/cmake_minimum_required(VERSION 3.25)/' feeds/luci/libs/rpcd-mod-luci/CMakeLists.txt
+# 修改 rpcd-mod-luci 的 CMake 要求，自动定位文件
+RPCD_MOD_LUCI_CMAKE=$(find feeds -path '*/rpcd-mod-luci/CMakeLists.txt' 2>/dev/null | head -n 1)
+if [ -n "$RPCD_MOD_LUCI_CMAKE" ]; then
+    sed -i 's/cmake_minimum_required(VERSION 3.31)/cmake_minimum_required(VERSION 3.25)/' "$RPCD_MOD_LUCI_CMAKE"
+fi
 
 # PassWall2 编译时如果 geoview 冲突，取消下面这行注释
 # rm -rf feeds/packages/net/geoview

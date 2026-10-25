@@ -1,6 +1,5 @@
 #!/bin/bash
 # diy-part2.sh —— 在 feeds update / install 之后、make defconfig 之前执行
-# 增强版：覆盖 R25.10.1 新增的 OpenVPN DCO / luci-proto-openvpnc 循环依赖
 
 set -e
 
@@ -10,16 +9,92 @@ set -e
 echo "===== [1/10] 基础配置修改（LAN IP） ====="
 sed -i 's/192.168.1.1/192.168.5.1/g' package/base-files/files/bin/config_generate
 
-echo "===== [设备锁定] 强制为 hiwifi_c526a 单设备构建 ====="
-# 启用多profile模式，并指定为单设备构建
-grep -q "^CONFIG_TARGET_MULTI_PROFILE=y" .config || echo "CONFIG_TARGET_MULTI_PROFILE=y" >> .config
-grep -q "^CONFIG_TARGET_PER_DEVICE_ROOTFS=y" .config || echo "CONFIG_TARGET_PER_DEVICE_ROOTFS=y" >> .config
+echo "===== [设备支持] 从 LEDE R23.8.23 恢复 hiwifi_c526a ====="
+SRC_BASE="https://raw.githubusercontent.com/coolsnowwolf/lede/20220401"
 
-# 确保目标设备被明确选中
-grep -q "^CONFIG_TARGET_ipq40xx_DEVICE_hiwifi_c526a=y" .config || echo "CONFIG_TARGET_ipq40xx_DEVICE_hiwifi_c526a=y" >> .config
-# 清除可能存在的、指向其他设备的残留配置
-sed -i '/CONFIG_TARGET_DEVICE_ipq40xx_DEVICE_8dev_habanero-dvk/d' .config
-sed -i '/CONFIG_TARGET_DEVICE_ipq40xx_DEVICE_.*_DEVICE_/d' .config
+# 1) 下载 DTS 文件
+DTS_DST="target/linux/ipq40xx/files/arch/arm/boot/dts/qcom-ipq4019-c526a.dts"
+mkdir -p "$(dirname "$DTS_DST")"
+if curl -sfL "$SRC_BASE/$DTS_DST" -o "$DTS_DST"; then
+    echo "  [OK] DTS 下载成功: $DTS_DST"
+else
+    echo "  [ERROR] DTS 下载失败，检查源地址 $SRC_BASE/$DTS_DST"
+    exit 1
+fi
+
+# 2) 下载 Wi-Fi 校准数据（二进制，必须单独下载）
+CAL_DST="package/firmware/ipq-wifi/board-hiwifi_c526a.qca4019"
+mkdir -p "$(dirname "$CAL_DST")"
+if curl -sfL "$SRC_BASE/$CAL_DST" -o "$CAL_DST"; then
+    echo "  [OK] 校准数据下载成功: $CAL_DST ($(stat -c%s "$CAL_DST") bytes)"
+else
+    echo "  [ERROR] 校准数据下载失败，检查源地址 $SRC_BASE/$CAL_DST"
+    exit 1
+fi
+
+# 3) 修改 ipq-wifi Makefile，注册 hiwifi_c526a
+IPQ_WIFI_MK="package/firmware/ipq-wifi/Makefile"
+if [ -f "$IPQ_WIFI_MK" ]; then
+    # 在 ALLWIFIBOARDS 列表里加入 hiwifi_c526a
+    grep -q "hiwifi_c526a" "$IPQ_WIFI_MK" || \
+        sed -i '/^ALLWIFIBOARDS:=/a\  hiwifi_c526a \\' "$IPQ_WIFI_MK"
+    # 在 eval 调用区加入 generate-ipq-wifi-package
+    grep -q "generate-ipq-wifi-package,hiwifi_c526a" "$IPQ_WIFI_MK" || \
+        sed -i '/edgecore_oap100,Edgecore OAP100/a\$(eval $(call generate-ipq-wifi-package,hiwifi_c526a,HiWiFi C526A))' "$IPQ_WIFI_MK"
+    echo "  [OK] ipq-wifi Makefile 已更新"
+fi
+
+# 4) 在 generic.mk 中追加 hiwifi_c526a 设备定义
+IMAGE_MK="target/linux/ipq40xx/image/generic.mk"
+if [ -f "$IMAGE_MK" ] && ! grep -q "Device/hiwifi_c526a" "$IMAGE_MK"; then
+    cat >> "$IMAGE_MK" <<'EOF'
+
+define Device/hiwifi_c526a
+	$(Device/dsa-migration)
+	DEVICE_VENDOR := HiWiFi
+	DEVICE_MODEL := C526A
+	DEVICE_DTS := qcom-ipq4019-c526a
+	DEVICE_PACKAGES := ipq-wifi-hiwifi_c526a kmod-ath10k-ct ath10k-firmware-qca4019-ct \
+		kmod-mt7615e kmod-mt7615-firmware
+	IMAGE_SIZE := 128m
+	KERNEL_SIZE := 4096k
+	IMAGES := sysupgrade.bin factory.ubi
+	IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata
+	IMAGE/factory.ubi := append-ubi
+endef
+TARGET_DEVICES += hiwifi_c526a
+EOF
+    echo "  [OK] generic.mk 已追加 hiwifi_c526a"
+fi
+
+# 5) 在 DTS Makefile patch 中注册 DTB（当前内核 5.4 对应 patches-5.4）
+DTB_PATCH_DIR="target/linux/ipq40xx/patches-5.4"
+if [ -d "$DTB_PATCH_DIR" ] && [ ! -f "$DTB_PATCH_DIR/903-arm-boot-add-dts-files.patch" ]; then
+    cat > "$DTB_PATCH_DIR/903-arm-boot-add-dts-files.patch" <<'EOF'
+--- a/arch/arm/boot/dts/Makefile
++++ b/arch/arm/boot/dts/Makefile
+@@ -750,6 +750,7 @@ dtb-$(CONFIG_ARCH_QCOM) += \
+ 	qcom-ipq4019-ap.dk04.1-c3.dtb \
+ 	qcom-ipq4019-ap.dk07.1-c1.dtb \
+ 	qcom-ipq4019-ap.dk07.1-c2.dtb \
++	qcom-ipq4019-c526a.dtb \
+ 	qcom-ipq4019-habanero-dvk.dtb \
+ 	qcom-ipq4019-wifi.dtb \
+ 	qcom-ipq4019-ap.dk01.1-c1.dtb \
+EOF
+    echo "  [OK] DTB Makefile patch 已生成"
+fi
+
+echo "===== [设备锁定] 强制为 hiwifi_c526a 单设备构建 ====="
+# 使用 single-profile 模式（最稳定）
+sed -i '/CONFIG_TARGET_MULTI_PROFILE=y/d' .config
+sed -i '/CONFIG_TARGET_PER_DEVICE_ROOTFS=y/d' .config
+sed -i '/CONFIG_TARGET_DEVICE_ipq40xx_DEVICE_/d' .config
+sed -i '/CONFIG_TARGET_DEVICE_PACKAGES_ipq40xx_DEVICE_/d' .config
+sed -i '/CONFIG_TARGET_ipq40xx_DEVICE_/d' .config
+# 确保 PROFILE 指向 hiwifi_c526a
+sed -i '/CONFIG_TARGET_PROFILE=/d' .config
+echo 'CONFIG_TARGET_PROFILE="DEVICE_hiwifi_c526a"' >> .config
 
 echo "===== [2/10] 主题：默认启用 Argon 并预设暗色模式 ====="
 for pkg in luci-theme-argon luci-app-argon-config; do
@@ -163,15 +238,140 @@ if [ -f "$KCONFIG_FILE" ]; then
     fi
 fi
 
-# （诊断部分与你上一版相同，此处省略以保持简洁；实际使用时请保留你之前的 DIAG-1 ~ DIAG-10 代码）
-echo "===== [DIAG] 关键循环依赖风险复查 ====="
-echo "--- OpenVPN DCO 残留 ---"
-grep -n "OPENVPN_.*_ENABLE_DCO" .config && echo "  [ERR] 仍有残留" || echo "  OK: 已清理"
-echo "--- luci-proto-openvpnc 残留 ---"
-grep -q "luci-proto-openvpnc" .config && echo "  [ERR] 仍存在" || echo "  OK: 已移除"
-echo "--- baresip avcodec 依赖 ---"
-grep -q "+baresip-mod-avcodec" feeds/telephony/net/baresip/Makefile 2>/dev/null && echo "  [WARN] telephony 中仍有残留" || echo "  OK"
-echo "--- samba 互依 ---"
-grep -q "luci-app-samba4" feeds/luci/applications/luci-app-samba/Makefile 2>/dev/null && echo "  [WARN] 仍有残留" || echo "  OK"
+# =====================================================
+# 阶段一诊断：静态文件检查（diy-part2.sh 末尾）
+# =====================================================
+echo ""
+echo "╔══════════════════════════════════════════════════════╗"
+echo "║   DIAG-STATIC：设备支持静态文件检查                    ║"
+echo "╚══════════════════════════════════════════════════════╝"
+
+DIAG_FAIL=0
+
+# ---------- DIAG-S1：DTS 文件 ----------
+echo ""
+echo "[DIAG-S1] DTS 设备树文件"
+DTS_FILE="target/linux/ipq40xx/files/arch/arm/boot/dts/qcom-ipq4019-c526a.dts"
+if [ -f "$DTS_FILE" ]; then
+    size=$(stat -c%s "$DTS_FILE")
+    if [ "$size" -gt 1000 ]; then
+        echo "  [OK] 存在，大小 ${size} bytes"
+    else
+        echo "  [ERR] 存在但大小异常（${size} bytes，可能下载了 404 页面）"
+        head -3 "$DTS_FILE" | sed 's/^/         /'
+        DIAG_FAIL=1
+    fi
+else
+    echo "  [ERR] 缺失: $DTS_FILE"
+    DIAG_FAIL=1
+fi
+
+# ---------- DIAG-S2：校准数据（二进制） ----------
+echo ""
+echo "[DIAG-S2] Wi-Fi 校准数据 (qca4019)"
+CAL_FILE="package/firmware/ipq-wifi/board-hiwifi_c526a.qca4019"
+if [ -f "$CAL_FILE" ]; then
+    size=$(stat -c%s "$CAL_FILE")
+    if [ "$size" -gt 10000 ]; then
+        echo "  [OK] 存在，大小 ${size} bytes"
+    else
+        echo "  [ERR] 存在但大小异常（${size} bytes，正常应 >10000）"
+        DIAG_FAIL=1
+    fi
+else
+    echo "  [ERR] 缺失: $CAL_FILE"
+    DIAG_FAIL=1
+fi
+
+# ---------- DIAG-S3：generic.mk 设备定义 ----------
+echo ""
+echo "[DIAG-S3] generic.mk 中的 hiwifi_c526a 设备定义"
+IMAGE_MK="target/linux/ipq40xx/image/generic.mk"
+if [ -f "$IMAGE_MK" ]; then
+    if grep -q "Device/hiwifi_c526a" "$IMAGE_MK"; then
+        echo "  [OK] Device/hiwifi_c526a 已定义"
+        # 检查关键字段是否齐全
+        block=$(awk '/define Device\/hiwifi_c526a/,/endef/' "$IMAGE_MK")
+        for field in "DEVICE_DTS" "DEVICE_PACKAGES" "IMAGE_SIZE" "IMAGES"; do
+            echo "$block" | grep -q "$field" && echo "         OK: $field" || { echo "         [ERR] 缺少 $field"; DIAG_FAIL=1; }
+        done
+        # 检查是否已注册到 TARGET_DEVICES
+        grep -q "TARGET_DEVICES += hiwifi_c526a" "$IMAGE_MK" && \
+            echo "         OK: 已加入 TARGET_DEVICES" || { echo "         [ERR] 未加入 TARGET_DEVICES"; DIAG_FAIL=1; }
+    else
+        echo "  [ERR] generic.mk 中不存在 Device/hiwifi_c526a"
+        DIAG_FAIL=1
+    fi
+else
+    echo "  [ERR] generic.mk 不存在"
+    DIAG_FAIL=1
+fi
+
+# ---------- DIAG-S4：ipq-wifi Makefile 注册 ----------
+echo ""
+echo "[DIAG-S4] ipq-wifi Makefile 注册"
+IPQ_WIFI_MK="package/firmware/ipq-wifi/Makefile"
+if [ -f "$IPQ_WIFI_MK" ]; then
+    grep -q "hiwifi_c526a" "$IPQ_WIFI_MK" && echo "  [OK] hiwifi_c526a 已注册" || { echo "  [ERR] ipq-wifi 未注册 hiwifi_c526a"; DIAG_FAIL=1; }
+else
+    echo "  [ERR] ipq-wifi Makefile 不存在"
+    DIAG_FAIL=1
+fi
+
+# ---------- DIAG-S5：DTB patch（针对内核 5.4） ----------
+echo ""
+echo "[DIAG-S5] DTB Makefile patch（patches-5.4）"
+DTB_PATCH="target/linux/ipq40xx/patches-5.4/903-arm-boot-add-dts-files.patch"
+if [ -f "$DTB_PATCH" ]; then
+    grep -q "qcom-ipq4019-c526a.dtb" "$DTB_PATCH" && echo "  [OK] patch 已包含 c526a.dtb" || { echo "  [ERR] patch 不含 c526a.dtb"; DIAG_FAIL=1; }
+else
+    echo "  [WARN] patch 文件不存在（如果 DTS 已在 Makefile 中可忽略）"
+fi
+
+# ---------- DIAG-S6：.config 设备选择格式 ----------
+echo ""
+echo "[DIAG-S6] .config 中的设备选择"
+if grep -q '^CONFIG_TARGET_PROFILE="DEVICE_hiwifi_c526a"' .config; then
+    echo "  [OK] CONFIG_TARGET_PROFILE 已指向 DEVICE_hiwifi_c526a"
+else
+    echo "  [ERR] CONFIG_TARGET_PROFILE 未指向 hiwifi_c526a"
+    echo "         当前值: $(grep '^CONFIG_TARGET_PROFILE=' .config || echo '未设置')"
+    DIAG_FAIL=1
+fi
+if grep -q "CONFIG_TARGET_ipq40xx_DEVICE_hiwifi_c526a=y" .config; then
+    echo "  [OK] CONFIG_TARGET_ipq40xx_DEVICE_hiwifi_c526a=y"
+else
+    echo "  [WARN] 未显式启用 CONFIG_TARGET_ipq40xx_DEVICE_hiwifi_c526a（部分版本用 PROFILE 控制即可）"
+fi
+
+# ---------- DIAG-S7：之前修复项复查 ----------
+echo ""
+echo "[DIAG-S7] 之前修复项复查"
+check_cfg_y() {
+    grep -q "^$1=y" .config && echo "  [OK] $1" || { echo "  [ERR] 缺少 $1"; DIAG_FAIL=1; }
+}
+check_cfg_n() {
+    grep -q "^$1=y" .config && { echo "  [ERR] $1 不应启用"; DIAG_FAIL=1; } || echo "  [OK] $1 已禁用"
+}
+check_cfg_y "CONFIG_PACKAGE_uhttpd-mod-ucode"
+check_cfg_y "CONFIG_PACKAGE_ucode-mod-log"
+check_cfg_y "CONFIG_PACKAGE_ucode-mod-socket"
+check_cfg_y "CONFIG_PACKAGE_luci-theme-argon"
+check_cfg_n "CONFIG_PACKAGE_luci-app-cpufreq"
+check_cfg_n "CONFIG_PACKAGE_luci-app-turboacc"
+check_cfg_n "CONFIG_PACKAGE_luci-theme-bootstrap"
+
+# ---------- 结果汇总 ----------
+echo ""
+if [ "$DIAG_FAIL" -eq 1 ]; then
+    echo "╔══════════════════════════════════════════════════════╗"
+    echo "║   ❌ 阶段一诊断失败，终止编译                          ║"
+    echo "╚══════════════════════════════════════════════════════╝"
+    exit 1
+else
+    echo "╔══════════════════════════════════════════════════════╗"
+    echo "║   ✅ 阶段一诊断通过                                    ║"
+    echo "╚══════════════════════════════════════════════════════╝"
+fi
 
 echo "===== diy-part2.sh 执行完毕 ====="

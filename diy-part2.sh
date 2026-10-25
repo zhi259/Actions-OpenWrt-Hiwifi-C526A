@@ -124,4 +124,57 @@ sed -i '/CONFIG_PACKAGE_cpufreq/d' .config
 # 可选：同时从 feeds 中彻底卸载，防止被其他包依赖拉起
 ./scripts/feeds uninstall luci-app-cpufreq
 
+# =====================================================
+# [DIAG] 完整诊断 + 强制修复
+# =====================================================
+echo "===== [DIAG] 开始诊断 ====="
+
+# 1. 检查 .config 里所有 cpufreq 相关项
+echo "--- [DIAG-1] .config cpufreq 项 ---"
+grep -i "cpufreq" .config || echo "  (无)"
+
+# 2. 检查 feeds 里 luci-app-cpufreq 的默认状态和依赖
+echo "--- [DIAG-2] luci-app-cpufreq Makefile ---"
+if [ -f feeds/luci/applications/luci-app-cpufreq/Makefile ]; then
+    grep -E "DEFAULT|DEPENDS|TITLE" feeds/luci/applications/luci-app-cpufreq/Makefile
+else
+    echo "  (Makefile 不存在)"
+fi
+
+# 3. 找出所有声明依赖 cpufreq 的包
+echo "--- [DIAG-3] 谁依赖 cpufreq ---"
+grep -rl "cpufreq" feeds/luci/applications/*/Makefile 2>/dev/null || echo "  (无)"
+
+# 4. 检查 luci 集合是否默认拉入 cpufreq
+echo "--- [DIAG-4] luci 集合依赖 ---"
+grep -E "cpufreq|DEFAULT" feeds/luci/collections/luci/Makefile 2>/dev/null || echo "  (无)"
+
+# 5. 检查其他已知会被默认拉入的问题包
+echo "--- [DIAG-5] 其他高危默认包 ---"
+for pkg in luci-app-cpufreq luci-app-samba luci-app-samba4 luci-app-turboacc; do
+    if grep -q "^CONFIG_PACKAGE_${pkg}=y" .config; then
+        echo "  [WARN] .config 中启用了: $pkg"
+    fi
+done
+
+# =====================================================
+# [FIX] 强制移除
+# =====================================================
+echo "===== [FIX] 强制移除问题包 ====="
+
+# 移除 .config 中的选项
+sed -i '/CONFIG_PACKAGE_luci-app-cpufreq/d' .config
+sed -i '/CONFIG_PACKAGE_cpufreq/d' .config
+sed -i '/CONFIG_DEFAULT_luci-app-cpufreq/d' .config
+
+# 从 feeds 中彻底卸载，防止被默认拉起
+./scripts/feeds uninstall luci-app-cpufreq 2>/dev/null || true
+
+# 验证
+echo "--- [FIX-VERIFY] 移除后检查 ---"
+grep -i "cpufreq" .config && echo "  [ERROR] 仍有残留!" || echo "  OK: .config 已无 cpufreq 相关项"
+[ -d feeds/luci/applications/luci-app-cpufreq ] && echo "  [WARN] feeds 目录仍存在" || echo "  OK: feeds 已移除"
+
+echo "===== [DIAG] 诊断结束 ====="
+
 echo "===== diy-part2.sh 执行完毕 ====="

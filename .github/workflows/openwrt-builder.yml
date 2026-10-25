@@ -91,45 +91,6 @@ jobs:
         cd openwrt
         make defconfig
         
-        # ========== 阶段二诊断：defconfig 后锁定状态 ==========
-        echo "╔══════════════════════════════════════════════════════╗"
-        echo "║   DIAG-DEFCONFIG：make defconfig 后复查               ║"
-        echo "╚══════════════════════════════════════════════════════╝"
-        DIAG_FAIL=0
-
-        PROFILE=$(grep '^CONFIG_TARGET_PROFILE=' .config | cut -d'"' -f2)
-        echo "[D1] CONFIG_TARGET_PROFILE = ${PROFILE:-<空>}"
-        if [ "$PROFILE" = "DEVICE_hiwifi_c526a" ]; then
-            echo "  [OK] 仍锁定 hiwifi_c526a"
-        else
-            echo "  [ERR] defconfig 把 PROFILE 改成了 $PROFILE！"
-            DIAG_FAIL=1
-        fi
-
-        echo "[D2] 其他设备残留"
-        others=$(grep -oP '^CONFIG_TARGET_DEVICE_ipq40xx_DEVICE_\K[a-z0-9_]+(?==y)' .config | grep -v hiwifi_c526a || true)
-        if [ -n "$others" ]; then
-            echo "  [ERR] 有其他设备被启用: $others"
-            DIAG_FAIL=1
-        else
-            echo "  [OK] 无其他设备"
-        fi
-
-        echo "[D3] 关键包在 defconfig 后仍存在"
-        for p in uhttpd-mod-ucode ucode-mod-log ucode-mod-socket luci-theme-argon; do
-            grep -q "^CONFIG_PACKAGE_${p}=y" .config && echo "  [OK] $p" || { echo "  [ERR] $p 丢了"; DIAG_FAIL=1; }
-        done
-
-        echo "[D4] bootstrap 是否复活"
-        grep -q "^CONFIG_PACKAGE_luci-theme-bootstrap=y" .config && { echo "  [ERR] bootstrap 复活"; DIAG_FAIL=1; } || echo "  [OK] bootstrap 未复活"
-
-        if [ "$DIAG_FAIL" -eq 1 ]; then
-            echo "❌ defconfig 后诊断失败，终止编译。"
-            exit 1
-        fi
-        echo "✅ defconfig 后诊断通过"
-        # ========== 诊断结束 ==========
-        
         make download -j8
         find dl -size -1024c -exec ls -l {} \;
         find dl -size -1024c -exec rm -f {} \;

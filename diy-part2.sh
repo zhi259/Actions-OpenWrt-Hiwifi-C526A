@@ -32,23 +32,55 @@ echo "===== [4/5] 从 passwall_packages 源批量强制重新安装 ====="
 ./scripts/feeds install -f -a -p passwall_packages
 ./scripts/feeds install -f luci-app-passwall2
 
-echo "===== [5/5] 补全 .config 缺失依赖 ====="
-# 1. 确保 ucode 核心包及其子模块在 .config 中被选中
-#    ucode-mod-* 是 package/utils/ucode 核心包的子模块，不在任何 feed 里，
-#    通过 feeds install 无法安装，只能在 .config 中选中让 make 编译出来。
-for cfg in \
-    CONFIG_PACKAGE_ucode \
-    CONFIG_PACKAGE_libucode \
-    CONFIG_PACKAGE_ucode-mod-log \
-    CONFIG_PACKAGE_ucode-mod-socket \
-    CONFIG_PACKAGE_ucode-mod-math \
-    CONFIG_PACKAGE_ucode-mod-ubus \
-    CONFIG_PACKAGE_ucode-mod-uci; do
-    grep -q "^${cfg}=y" .config || echo "${cfg}=y" >> .config
-done
+echo "===== [4.5/5] 修复 ucode Makefile，添加 log 和 socket 模块 ====="
+UCODE_MAKEFILE="package/utils/ucode/Makefile"
+if [ ! -f "$UCODE_MAKEFILE" ]; then
+    echo "错误: 未找到 $UCODE_MAKEFILE，无法修复 ucode 模块"
+    exit 1
+fi
 
-# 2. 移除 cpufreq 残留配置（luci-app-cpufreq 已从 .config 移除）
-sed -i '/^CONFIG_PACKAGE_cpufreq=/d' .config 2>/dev/null || true
+python3 - "$UCODE_MAKEFILE" <<'PYEOF'
+import sys
+
+path = sys.argv[1]
+with open(path, 'r', encoding='utf-8') as f:
+    content = f.read()
+
+anchor = '$(eval $(call BuildPackage,libucode))'
+if anchor not in content:
+    print("错误: 在 ucode Makefile 中未找到锚点，无法插入")
+    sys.exit(1)
+
+insert_lines = []
+
+# 检查是否已通过 UcodeModule 宏定义了 log 模块
+if not any('log' in line and 'UcodeModule' in content[max(0, content.find(line)-50):content.find(line)+len(line)] for line in content.splitlines()):
+    # 使用与官方一致的格式：模块名在下一行
+    log_def = """$(eval $(call UcodeModule, \\
+\tlog, LOG_SUPPORT, , \\
+))
+"""
+    insert_lines.append(log_def)
+
+# 检查 socket 模块
+if not any('socket' in line and 'UcodeModule' in content[max(0, content.find(line)-50):content.find(line)+len(line)] for line in content.splitlines()):
+    socket_def = """$(eval $(call UcodeModule, \\
+\tsocket, SOCKET_SUPPORT, , \\
+))
+"""
+    insert_lines.append(socket_def)
+
+if insert_lines:
+    new_block = ''.join(insert_lines) + '\n' + anchor
+    content = content.replace(anchor, new_block, 1)
+    with open(path, 'w', encoding='utf-8') as f:
+        f.write(content)
+    print(f"已向 {path} 插入 log / socket 模块定义")
+else:
+    print(f"{path} 中 log / socket 模块定义已存在，无需插入")
+PYEOF
+
+echo "===== [5/5] 补全 .config 缺失依赖 ====="
 
 # 3. 诊断：确认 ucode 核心源码存在（这是 ucode-mod-* 能被编译的前提）
 if [ -f package/utils/ucode/Makefile ]; then
@@ -56,17 +88,8 @@ if [ -f package/utils/ucode/Makefile ]; then
 else
     echo "WARNING: package/utils/ucode/Makefile 不存在！ucode-mod-* 将无法编译"
 fi
-# （可选）开启内核 CPU 调频框架，不影响构建
-for opt in \
-  CONFIG_CPU_FREQ=y \
-  CONFIG_CPU_FREQ_GOV_ONDEMAND=y \
-  CONFIG_CPU_FREQ_DEFAULT_GOV_ONDEMAND=y; do
-  grep -q "^${opt}$" target/linux/ipq40xx/config-5.4 2>/dev/null \
-    || echo "${opt}" >> target/linux/ipq40xx/config-5.4
-done
 
 echo "===== [诊断] 关键源码与 feed 链接检查 ====="
-
 # ucode 核心源码（ucode-mod-* 的父包）
 if [ -f package/utils/ucode/Makefile ]; then
     echo "OK: package/utils/ucode/Makefile 存在"
@@ -100,14 +123,6 @@ for cfg in CONFIG_PACKAGE_ucode CONFIG_PACKAGE_libucode \
         && echo "OK: .config 包含 ${cfg}=y" \
         || echo "WARNING: .config 缺少 ${cfg}=y"
 done
-
-# 残留 cpufreq 配置检查（应不存在）
-if grep -q '^CONFIG_PACKAGE_cpufreq=' .config 2>/dev/null; then
-    echo "WARNING: .config 仍有 CONFIG_PACKAGE_cpufreq，建议删除"
-else
-    echo "OK: .config 无 CONFIG_PACKAGE_cpufreq 残留"
-fi
-
 echo "===== [诊断] 结束 ====="
 
 echo "===== diy-part2.sh 执行完毕 ====="

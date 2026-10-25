@@ -18,8 +18,8 @@ on:
 
 env:
   REPO_URL: https://github.com/coolsnowwolf/lede
-  REPO_BRANCH: R25.10.1
-  # REPO_COMMIT: 已注释，走 tag HEAD；如需固定 commit 再填 hash
+  REPO_BRANCH: master
+  REPO_COMMIT: ca3fda0
   FEEDS_CONF: feeds.conf.default
   CONFIG_FILE: .config
   DIY_P1_SH: diy-part1.sh

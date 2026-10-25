@@ -90,6 +90,65 @@ jobs:
       run: |
         cd openwrt
         make defconfig
+        
+        # ========== 阶段二诊断：defconfig 后锁定状态 ==========
+        echo ""
+        echo "╔══════════════════════════════════════════════════════╗"
+        echo "║   DIAG-DEFCONFIG：defconfig 后设备锁定状态            ║"
+        echo "╚══════════════════════════════════════════════════════╝"
+        
+        DIAG_FAIL=0
+        
+        echo "[DIAG-D1] CONFIG_TARGET_PROFILE"
+        PROFILE=$(grep '^CONFIG_TARGET_PROFILE=' .config | cut -d'"' -f2)
+        echo "  当前值: ${PROFILE:-<空>}"
+        if [ "$PROFILE" = "DEVICE_hiwifi_c526a" ]; then
+            echo "  [OK] 已锁定 hiwifi_c526a"
+        else
+            echo "  [ERR] 未锁定 hiwifi_c526a！生成的固件会是其他设备。"
+            DIAG_FAIL=1
+        fi
+        
+        echo ""
+        echo "[DIAG-D2] 其他设备残留检查"
+        other_devices=$(grep -oP '^CONFIG_TARGET_DEVICE_ipq40xx_DEVICE_\K[a-z0-9_]+(?==y)' .config || true)
+        if [ -n "$other_devices" ]; then
+            echo "  [ERR] 发现其他设备被启用："
+            echo "$other_devices" | sed 's/^/         /'
+            DIAG_FAIL=1
+        else
+            echo "  [OK] 无其他设备残留"
+        fi
+        
+        echo ""
+        echo "[DIAG-D3] 关键包在 defconfig 后仍存在？"
+        for pkg in uhttpd-mod-ucode ucode-mod-log ucode-mod-socket luci-theme-argon luci-app-passwall2_Iptables_Transparent_Proxy; do
+            grep -q "^CONFIG_PACKAGE_${pkg}=y" .config && echo "  [OK] $pkg" || { echo "  [ERR] $pkg 被 defconfig 清掉了"; DIAG_FAIL=1; }
+        done
+        
+        echo ""
+        echo "[DIAG-D4] 危险包未被复活？"
+        for pkg in luci-app-cpufreq luci-app-turboacc luci-theme-bootstrap; do
+            grep -q "^CONFIG_PACKAGE_${pkg}=y" .config && { echo "  [ERR] $pkg 被 defconfig 复活"; DIAG_FAIL=1; } || echo "  [OK] $pkg 仍禁用"
+        done
+        
+        echo ""
+        echo "[DIAG-D5] 关键 DEVICE 符号是否出现在 .config 中"
+        grep -q "CONFIG_TARGET_ipq40xx_DEVICE_hiwifi_c526a=y" .config && \
+            echo "  [OK] DEVICE 符号存在" || echo "  [WARN] DEVICE 符号不存在（使用 PROFILE 控制时正常）"
+        
+        echo ""
+        if [ "$DIAG_FAIL" -eq 1 ]; then
+            echo "❌ defconfig 诊断失败，终止编译。"
+            exit 1
+        else
+            echo "✅ defconfig 诊断通过，进入下载阶段。"
+        fi
+        # ========== 诊断结束 ==========
+        
+        make download -j8
+        find dl -size -1024c -exec ls -l {} \;
+        find dl -size -1024c -exec rm -f {} \;
         make download -j8
         find dl -size -1024c -exec ls -l {} \;
         find dl -size -1024c -exec rm -f {} \;

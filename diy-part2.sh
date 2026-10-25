@@ -71,6 +71,22 @@ for pkg in xray-core v2ray-geodata sing-box chinadns-ng dns2socks hysteria \
 done
 rm -rf feeds/luci/applications/luci-app-passwall
 
+echo "===== [3.5/5] 修复 PassWall2 已知依赖问题 ====="
+# 方案A（推荐）：直接移除对 geoview 的硬依赖，绕过兼容性问题
+PW2_MAKEFILE="feeds/luci/applications/luci-app-passwall2/Makefile"
+if [ -f "$PW2_MAKEFILE" ]; then
+    sed -i 's/+geoview//g' "$PW2_MAKEFILE"
+    echo "已移除 luci-app-passwall2 对 geoview 的依赖"
+fi
+
+# 方案B（备选）：如果希望保留 geoview，可尝试强制重新安装
+# ./scripts/feeds install -f geoview
+
+# 同时，建议一并移除其他可能引起架构不兼容的硬依赖
+for dep in xray-core v2ray-geoip v2ray-geosite; do
+    sed -i "s/+${dep}//g" "$PW2_MAKEFILE"
+done
+
 echo "===== [4/5] 从 passwall_packages 源批量强制重新安装 ====="
 ./scripts/feeds install -f -a -p passwall_packages
 ./scripts/feeds install -f luci-app-passwall2

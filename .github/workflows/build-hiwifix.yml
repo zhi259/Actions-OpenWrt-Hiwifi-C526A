@@ -1,4 +1,4 @@
-name: Build HiWiFi X Custom OpenWrt with FakeSIP
+name: HiWiFi X OpenWrt
 
 on:
   workflow_dispatch:

@@ -86,21 +86,47 @@ EOF
 fi
 
 echo "===== [设备锁定] 强制为 hiwifi_c526a 单设备构建 ====="
-# 使用 single-profile 模式（最稳定）
-sed -i '/CONFIG_TARGET_MULTI_PROFILE=y/d' .config
-sed -i '/CONFIG_TARGET_PER_DEVICE_ROOTFS=y/d' .config
+# 彻底清理设备选择相关行（包括已存在的 PROFILE）
+sed -i '/CONFIG_TARGET_MULTI_PROFILE[= ]/d' .config
+sed -i '/CONFIG_TARGET_PER_DEVICE_ROOTFS[= ]/d' .config
 sed -i '/CONFIG_TARGET_DEVICE_ipq40xx_DEVICE_/d' .config
 sed -i '/CONFIG_TARGET_DEVICE_PACKAGES_ipq40xx_DEVICE_/d' .config
 sed -i '/CONFIG_TARGET_ipq40xx_DEVICE_/d' .config
-# 确保 PROFILE 指向 hiwifi_c526a
 sed -i '/CONFIG_TARGET_PROFILE=/d' .config
-echo 'CONFIG_TARGET_PROFILE="DEVICE_hiwifi_c526a"' >> .config
+
+# 关键：显式写入 PROFILE（这是构建系统的唯一入口），注意带引号
+{
+    echo 'CONFIG_TARGET_PROFILE="DEVICE_hiwifi_c526a"'
+    echo 'CONFIG_TARGET_MULTI_PROFILE=y'
+    echo 'CONFIG_TARGET_PER_DEVICE_ROOTFS=y'
+    echo 'CONFIG_TARGET_DEVICE_ipq40xx_DEVICE_hiwifi_c526a=y'
+    echo 'CONFIG_TARGET_ipq40xx_DEVICE_hiwifi_c526a=y'
+} >> .config
+
+# 立即验证（如果这里失败，说明 .config 路径或写入有问题）
+if grep -q '^CONFIG_TARGET_PROFILE="DEVICE_hiwifi_c526a"' .config; then
+    echo "  OK: PROFILE 已锁定为 DEVICE_hiwifi_c526a"
+else
+    echo "  [ERR] PROFILE 写入失败！"
+    exit 1
+fi
 
 echo "===== [2/10] 主题：默认启用 Argon 并预设暗色模式 ====="
+# 强力删除所有可能的 bootstrap 写法（=y、=m、is not set）
+sed -i '/CONFIG_PACKAGE_luci-theme-bootstrap[= ]/d' .config
+sed -i '/CONFIG_DEFAULT_luci-theme-bootstrap[= ]/d' .config
+# 显示是否还残留（便于排查）
+if grep -q 'CONFIG_PACKAGE_luci-theme-bootstrap' .config; then
+    echo "  [WARN] bootstrap 仍有残留（可能是 is not set 形式，不影响）"
+    grep 'CONFIG_PACKAGE_luci-theme-bootstrap' .config | sed 's/^/         /'
+fi
+
+# 确保 argon 已启用
 for pkg in luci-theme-argon luci-app-argon-config; do
     grep -q "^CONFIG_PACKAGE_${pkg}=y" .config || echo "CONFIG_PACKAGE_${pkg}=y" >> .config
 done
-sed -i '/CONFIG_PACKAGE_luci-theme-bootstrap=y/d' .config
+
+# 修改 collection 的 Makefile，让 luci 集合依赖 argon 而非 bootstrap
 rm -rf feeds/kenzo/luci-theme-argon 2>/dev/null || true
 sed -i 's/luci-theme-bootstrap/luci-theme-argon/g' feeds/luci/collections/luci/Makefile 2>/dev/null || true
 sed -i 's/luci-theme-bootstrap/luci-theme-argon/g' feeds/luci/collections/luci-nginx/Makefile 2>/dev/null || true

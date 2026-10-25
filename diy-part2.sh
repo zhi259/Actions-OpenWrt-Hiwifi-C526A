@@ -116,4 +116,12 @@ else
     echo "OK: luci-mod-status 依赖已清理"
 fi
 
+# 在 diy-part2.sh 的末尾加入以下命令
+# 强制移除 luci-app-cpufreq 及其内核依赖，避免编译失败
+sed -i '/CONFIG_PACKAGE_luci-app-cpufreq/d' .config
+sed -i '/CONFIG_PACKAGE_cpufreq/d' .config
+
+# 可选：同时从 feeds 中彻底卸载，防止被其他包依赖拉起
+./scripts/feeds uninstall luci-app-cpufreq
+
 echo "===== diy-part2.sh 执行完毕 ====="

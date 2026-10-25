@@ -40,6 +40,29 @@ for f in feeds/luci/modules/luci-base/Makefile feeds/luci/modules/luci-mod-statu
     fi
 done
 
+echo "===== [2.6/5] 修复 Kconfig 递归依赖 ====="
+# 1. 修复 baresip 的 avcodec/avformat 循环依赖
+BARESIP_MK="feeds/packages/net/baresip/Makefile"
+if [ -f "$BARESIP_MK" ]; then
+    # 移除 avformat 对 avcodec 的强制依赖，或者反过来移除 avcodec 对 avformat 的依赖
+    # 这里选择移除 avformat 的 avcodec 依赖，并添加注释说明
+    sed -i 's/+baresip-mod-avcodec//g' "$BARESIP_MK"
+    echo "已移除 baresip-mod-avformat 对 avcodec 的依赖"
+fi
+
+# 2. 修复 luci-app-samba 与 luci-app-samba4 的循环依赖
+# 通常是因为两个包互相依赖，我们保留 luci-app-samba4 并移除 luci-app-samba 对 samba4 的依赖
+SAMBA_APP_MK="feeds/luci/applications/luci-app-samba/Makefile"
+SAMBA4_APP_MK="feeds/luci/applications/luci-app-samba4/Makefile"
+if [ -f "$SAMBA_APP_MK" ]; then
+    sed -i 's/+luci-app-samba4//g' "$SAMBA_APP_MK"
+    echo "已移除 luci-app-samba 对 luci-app-samba4 的依赖"
+fi
+if [ -f "$SAMBA4_APP_MK" ]; then
+    sed -i 's/+luci-app-samba//g' "$SAMBA4_APP_MK"
+    echo "已移除 luci-app-samba4 对 luci-app-samba 的依赖"
+fi
+
 echo "===== [3/5] 清理 lede 自带的 PassWall 冲突包 ====="
 for pkg in xray-core v2ray-geodata sing-box chinadns-ng dns2socks hysteria \
            ipt2socks microsocks naiveproxy shadowsocks-rust shadowsocksr-libev \

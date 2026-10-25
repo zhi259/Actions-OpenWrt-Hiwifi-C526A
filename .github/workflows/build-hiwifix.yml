@@ -99,7 +99,7 @@ jobs:
           echo "FIRMWARE_PATH=$PWD" >> $GITHUB_ENV
 
       - name: Upload Firmware to Artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: HiWiFi-X-Custom-Firmware-With-FakeSIP
           path: |

@@ -10,6 +10,17 @@ set -e
 echo "===== [1/10] 基础配置修改（LAN IP） ====="
 sed -i 's/192.168.1.1/192.168.5.1/g' package/base-files/files/bin/config_generate
 
+echo "===== [设备锁定] 强制为 hiwifi_c526a 单设备构建 ====="
+# 启用多profile模式，并指定为单设备构建
+grep -q "^CONFIG_TARGET_MULTI_PROFILE=y" .config || echo "CONFIG_TARGET_MULTI_PROFILE=y" >> .config
+grep -q "^CONFIG_TARGET_PER_DEVICE_ROOTFS=y" .config || echo "CONFIG_TARGET_PER_DEVICE_ROOTFS=y" >> .config
+
+# 确保目标设备被明确选中
+grep -q "^CONFIG_TARGET_ipq40xx_DEVICE_hiwifi_c526a=y" .config || echo "CONFIG_TARGET_ipq40xx_DEVICE_hiwifi_c526a=y" >> .config
+# 清除可能存在的、指向其他设备的残留配置
+sed -i '/CONFIG_TARGET_DEVICE_ipq40xx_DEVICE_8dev_habanero-dvk/d' .config
+sed -i '/CONFIG_TARGET_DEVICE_ipq40xx_DEVICE_.*_DEVICE_/d' .config
+
 echo "===== [2/10] 主题：默认启用 Argon 并预设暗色模式 ====="
 for pkg in luci-theme-argon luci-app-argon-config; do
     grep -q "^CONFIG_PACKAGE_${pkg}=y" .config || echo "CONFIG_PACKAGE_${pkg}=y" >> .config
@@ -117,6 +128,40 @@ done
 
 echo "===== [10/10] 修复阶段结束，进入诊断 ====="
 set +e
+
+
+echo "===== [设备支持诊断] 检查 hiwifi_c526a 是否存在于当前源码 ====="
+
+# 1. 检查设备树文件
+DTS_FILE="target/linux/ipq40xx/files/arch/arm/boot/dts/qcom-ipq4019-c526a.dts"
+if [ -f "$DTS_FILE" ]; then
+    echo "  [OK] DTS 文件存在: $DTS_FILE"
+else
+    echo "  [ERROR] DTS 文件缺失！设备支持可能已被移除。"
+fi
+
+# 2. 检查镜像 Makefile 中的设备定义
+IMAGE_MK="target/linux/ipq40xx/image/generic.mk"
+if [ -f "$IMAGE_MK" ]; then
+    if grep -q "hiwifi_c526a" "$IMAGE_MK"; then
+        echo "  [OK] 镜像 Makefile 中包含 hiwifi_c526a 定义"
+        grep -n "hiwifi_c526a" "$IMAGE_MK" | head -5
+    else
+        echo "  [ERROR] 镜像 Makefile 中未找到 hiwifi_c526a！设备可能已被移除。"
+    fi
+else
+    echo "  [ERROR] 镜像 Makefile 不存在: $IMAGE_MK"
+fi
+
+# 3. 检查内核配置
+KCONFIG_FILE="target/linux/ipq40xx/config-5.4"
+if [ -f "$KCONFIG_FILE" ]; then
+    if grep -q "HIWIFI_C526A" "$KCONFIG_FILE"; then
+        echo "  [OK] 内核配置中包含 HIWIFI_C526A"
+    else
+        echo "  [WARN] 内核配置中未显式包含 HIWIFI_C526A（不一定代表不支持）"
+    fi
+fi
 
 # （诊断部分与你上一版相同，此处省略以保持简洁；实际使用时请保留你之前的 DIAG-1 ~ DIAG-10 代码）
 echo "===== [DIAG] 关键循环依赖风险复查 ====="

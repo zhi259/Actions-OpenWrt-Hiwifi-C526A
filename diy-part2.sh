@@ -230,6 +230,42 @@ done
 echo "===== [10/10] 修复阶段结束，进入诊断 ====="
 set +e
 
+echo "===== [FINAL-LOCK] 最终配置锁定（诊断前强制修复） ====="
+
+# 1) 强力删除所有可能的 bootstrap 写法
+sed -i '/^CONFIG_PACKAGE_luci-theme-bootstrap/d' .config
+sed -i '/^CONFIG_DEFAULT_luci-theme-bootstrap/d' .config
+
+# 2) 删除所有可能的 PROFILE 和 MULTI_PROFILE 残留
+sed -i '/^CONFIG_TARGET_PROFILE=/d' .config
+sed -i '/^CONFIG_TARGET_MULTI_PROFILE[= ]/d' .config
+sed -i '/^CONFIG_TARGET_PER_DEVICE_ROOTFS[= ]/d' .config
+sed -i '/^CONFIG_TARGET_DEVICE_ipq40xx_DEVICE_/d' .config
+sed -i '/^CONFIG_TARGET_DEVICE_PACKAGES_ipq40xx_DEVICE_/d' .config
+sed -i '/^CONFIG_TARGET_ipq40xx_DEVICE_/d' .config
+
+# 3) 一次性写入所有必需配置
+cat >> .config <<'EOF'
+CONFIG_TARGET_PROFILE="DEVICE_hiwifi_c526a"
+CONFIG_TARGET_MULTI_PROFILE=y
+CONFIG_TARGET_PER_DEVICE_ROOTFS=y
+CONFIG_TARGET_DEVICE_ipq40xx_DEVICE_hiwifi_c526a=y
+CONFIG_TARGET_ipq40xx_DEVICE_hiwifi_c526a=y
+CONFIG_PACKAGE_luci-theme-argon=y
+CONFIG_PACKAGE_luci-app-argon-config=y
+EOF
+
+# 4) 立即验证（写入失败直接 exit）
+if ! grep -q '^CONFIG_TARGET_PROFILE="DEVICE_hiwifi_c526a"' .config; then
+    echo "  [FATAL] PROFILE 写入失败！"
+    exit 1
+fi
+if grep -q '^CONFIG_PACKAGE_luci-theme-bootstrap' .config; then
+    echo "  [FATAL] bootstrap 仍有残留："
+    grep '^CONFIG_PACKAGE_luci-theme-bootstrap' .config | sed 's/^/         /'
+    exit 1
+fi
+echo "  [OK] FINAL-LOCK 完成：PROFILE=hiwifi_c526a，bootstrap 已清除"
 
 echo "===== [设备支持诊断] 检查 hiwifi_c526a 是否存在于当前源码 ====="
 

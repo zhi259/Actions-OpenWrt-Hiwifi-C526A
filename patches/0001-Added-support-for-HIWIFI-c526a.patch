@@ -1,0 +1,549 @@
+From 9eb57aaaaa5822b8c6d4d64bc63cdc336bd237ce Mon Sep 17 00:00:00 2001
+From: Keli Hu <dev@keli.hu>
+Date: Wed, 20 Jul 2022 11:29:36 +0800
+Subject: [PATCH] Added support for HIWIFI c526a
+
+---
+ package/firmware/ipq-wifi/Makefile                 |   2 +
+ .../ipq-wifi/board-hiwifi_c526a.qca4019            | Bin 0 -> 24300 bytes
+ .../ipq40xx/base-files/etc/board.d/02_network      |  10 ++++
+ .../etc/hotplug.d/firmware/11-ath10k-caldata       |   8 ++
+ .../etc/hotplug.d/ieee80211/10_fix_wifi_mac        |  21 ++++++
+ .../base-files/etc/init.d/mt7615_reboot            |  13 ++++
+ .../base-files/lib/upgrade/platform.sh             |   1 +
+ .../arch/arm/boot/dts/qcom-ipq4019-c526a.dts       | 314 +++++++++++++++++++++
+ target/linux/ipq40xx/image/generic.mk              |  12 +++
+ .../903-arm-boot-add-dts-files.patch               |  10 ++
+ 10 files changed, 391 insertions(+)
+ create mode 100644 package/firmware/ipq-wifi/board-hiwifi_c526a.qca4019
+ create mode 100644 target/linux/ipq40xx/base-files/etc/hotplug.d/ieee80211/10_fix_wifi_mac
+ create mode 100644 target/linux/ipq40xx/base-files/etc/init.d/mt7615_reboot
+ create mode 100644 target/linux/ipq40xx/files/arch/arm/boot/dts/qcom-ipq4019-c526a.dts
+ create mode 100644 target/linux/ipq40xx/patches-5.10/903-arm-boot-add-dts-files.patch
+
+diff --git a/package/firmware/ipq-wifi/Makefile b/package/firmware/ipq-wifi/Makefile
+index ebd10cd2ec..85e3e1f0a4 100644
+--- a/package/firmware/ipq-wifi/Makefile
++++ b/package/firmware/ipq-wifi/Makefile
+@@ -29,6 +29,7 @@ ALLWIFIBOARDS:= \
+   devolo_magic-2-wifi-next \
+   edgecore_ecw5410 \
+   edgecore_oap100 \
++  hiwifi_c526a \
+   glinet_gl-ap1300 \
+   glinet_gl-s1300 \
+   linksys_ea8300 \
+@@ -100,6 +101,7 @@ $(eval $(call generate-ipq-wifi-package,aruba_ap-365,Aruba AP-365))
+ $(eval $(call generate-ipq-wifi-package,devolo_magic-2-wifi-next,devolo Magic 2 WiFi next))
+ $(eval $(call generate-ipq-wifi-package,edgecore_ecw5410,Edgecore ECW5410))
+ $(eval $(call generate-ipq-wifi-package,edgecore_oap100,Edgecore OAP100))
++$(eval $(call generate-ipq-wifi-package,hiwifi_c526a,HiWiFi C526A))
+ $(eval $(call generate-ipq-wifi-package,glinet_gl-ap1300,GL.iNet GL-AP1300))
+ $(eval $(call generate-ipq-wifi-package,glinet_gl-s1300,GL.iNet GL-S1300))
+ $(eval $(call generate-ipq-wifi-package,linksys_ea8300,Linksys EA8300))
+diff --git a/package/firmware/ipq-wifi/board-hiwifi_c526a.qca4019 b/package/firmware/ipq-wifi/board-hiwifi_c526a.qca4019
+new file mode 100644
+index 0000000000..6c5f7d5d21
+Binary files /dev/null and b/package/firmware/ipq-wifi/board-hiwifi_c526a.qca4019 differ
+diff --git a/target/linux/ipq40xx/base-files/etc/board.d/02_network b/target/linux/ipq40xx/base-files/etc/board.d/02_network
+index 5414f0f4db..e4f0d5d6c8 100644
+--- a/target/linux/ipq40xx/base-files/etc/board.d/02_network
++++ b/target/linux/ipq40xx/base-files/etc/board.d/02_network
+@@ -18,6 +18,16 @@ ipq40xx_setup_interfaces()
+  	;;
+  	glinet,gl-b1300|\
+  	glinet,gl-s1300)
++	hiwifi,c526a)
++		ucidef_set_interfaces_lan_wan "lan1 lan2 lan3" "wan"
++		;;
++	*)
++		ucidef_set_interfaces_lan_wan "lan1 lan2 lan3 lan4" "wan"
++		;;
++	esac
++}
++
++ipq40xx_setup_macs()
++{
++	local lan_mac wan_mac
++
++	case "$board" in
++	hiwifi,c526a)
++		lan_mac=$(mtd_get_mac_text "factory" 0x0)
++		wan_mac=$(mtd_get_mac_text "factory" 0x6)
++		;;
++	*)
++		return
++		;;
++	esac
++
++	[ -n "$lan_mac" ] && ucidef_set_interface_macaddr "lan" "$lan_mac"
++	[ -n "$wan_mac" ] && ucidef_set_interface_macaddr "wan" "$wan_mac"
++}
++
++board_config_update
++ipq40xx_setup_interfaces
++ipq40xx_setup_macs
++board_config_flush
+diff --git a/target/linux/ipq40xx/base-files/etc/hotplug.d/firmware/11-ath10k-caldata b/target/linux/ipq40xx/base-files/etc/hotplug.d/firmware/11-ath10k-caldata
+index 68e56b3c25..b8e2a7c986 100644
+--- a/target/linux/ipq40xx/base-files/etc/hotplug.d/firmware/11-ath10k-caldata
++++ b/target/linux/ipq40xx/base-files/etc/hotplug.d/firmware/11-ath10k-caldata
+@@ -22,6 +22,14 @@ case "$FIRMWARE" in
+  		ath10k_caldata_extract "art" "0x1000" "0x844"
+  		;;
+  	*)
++	hiwifi,c526a)
++		ath10k_caldata_extract "art" "0x1000" "0x844"
++		;;
++	*)
++		;;
++	esac
++	;;
++	*)
+  		;;
+  	esac
+  	;;
+diff --git a/target/linux/ipq40xx/base-files/etc/hotplug.d/ieee80211/10_fix_wifi_mac b/target/linux/ipq40xx/base-files/etc/hotplug.d/ieee80211/10_fix_wifi_mac
+new file mode 100644
+index 0000000000..5e2a5c4e5b
+--- /dev/null
++++ b/target/linux/ipq40xx/base-files/etc/hotplug.d/ieee80211/10_fix_wifi_mac
+@@ -0,0 +1,21 @@
++#!/bin/sh
++
++[ "$ACTION" = "add" ] || exit 0
++
++case "$DEVPATH" in
++*/*/*/net/*)
++	[ -e "/sys/$DEVPATH/address" ] || exit 0
++	;;
++*)	exit 0 ;;
++esac
++
++case "$(board_name)" in
++hiwifi,c526a)
++	# fix mac address for 5G wifi
++	mac=$(mtd_get_mac_text "factory" 0x1006)
++	[ -n "$mac" ] && ip link set dev "$INTERFACE" address "$mac"
++	;;
++*)	;;
++esac
++
++exit 0
+diff --git a/target/linux/ipq40xx/base-files/etc/init.d/mt7615_reboot b/target/linux/ipq40xx/base-files/etc/init.d/mt7615_reboot
+new file mode 100644
+index 0000000000..a2b3c4d5e6
+--- /dev/null
++++ b/target/linux/ipq40xx/base-files/etc/init.d/mt7615_reboot
+@@ -0,0 +1,13 @@
++#!/bin/sh /etc/rc.common
++
++START=99
++
++start() {
++	# workaround for mt7615 reboot issue
++	[ -e /sys/kernel/debug/ieee80211/phy1/mt76 ] && {
++		echo 1 > /sys/kernel/debug/ieee80211/phy1/mt76/reboot
++	}
++}
++
++boot() { start; }
++shutdown() { start; }
+diff --git a/target/linux/ipq40xx/base-files/lib/upgrade/platform.sh b/target/linux/ipq40xx/base-files/lib/upgrade/platform.sh
+index c8f9e0a7b6..d1e2f3a4b5 100644
+--- a/target/linux/ipq40xx/base-files/lib/upgrade/platform.sh
++++ b/target/linux/ipq40xx/base-files/lib/upgrade/platform.sh
+@@ -18,6 +18,7 @@ platform_do_upgrade() {
+  	;;
+  	glinet,gl-b1300|\
+  	glinet,gl-s1300|\
++	hiwifi,c526a|\
+  	linksys,ea8300|\
+  	linksys,ea6350v3)
+  		platform_do_upgrade_linksys "$1"
+diff --git a/target/linux/ipq40xx/files/arch/arm/boot/dts/qcom-ipq4019-c526a.dts b/target/linux/ipq40xx/files/arch/arm/boot/dts/qcom-ipq4019-c526a.dts
+new file mode 100644
+index 0000000000..7f6b5c4d3e
+--- /dev/null
++++ b/target/linux/ipq40xx/files/arch/arm/boot/dts/qcom-ipq4019-c526a.dts
+@@ -0,0 +1,314 @@
++// SPDX-License-Identifier: GPL-2.0-or-later
++
++/dts-v1/;
++
++#include "qcom-ipq4019.dtsi"
++#include <dt-bindings/gpio/gpio.h>
++#include <dt-bindings/input/input.h>
++#include <dt-bindings/leds/common.h>
++#include <dt-bindings/soc/qcom,tcsr.h>
++
++/ {
++	model = "HiWiFi C526A";
++	compatible = "hiwifi,c526a";
++
++	aliases {
++		led-boot = &led_system;
++		led-failsafe = &led_system;
++		led-running = &led_system;
++		led-upgrade = &led_system;
++	};
++
++	chosen {
++		bootargs = "console=ttyMSM0,115200n8";
++		stdout-path = "serial0:115200n8";
++	};
++
++	memory@80000000 {
++		device_type = "memory";
++		reg = <0x80000000 0x10000000>;
++	};
++
++	keys {
++		compatible = "gpio-keys";
++
++		reset {
++			label = "reset";
++			gpios = <&tlmm 63 GPIO_ACTIVE_LOW>;
++			linux,code = <KEY_RESTART>;
++		};
++	};
++
++	leds {
++		compatible = "gpio-leds";
++
++		led_system: system {
++			label = "c526a:red:system";
++			gpios = <&tlmm 5 GPIO_ACTIVE_HIGH>;
++			linux,default-trigger = "heartbeat";
++			color = <LED_COLOR_ID_RED>;
++			function = LED_FUNCTION_STATUS;
++		};
++
++		led_wlan2g: wlan2g {
++			label = "c526a:blue:wlan2g";
++			gpios = <&tlmm 4 GPIO_ACTIVE_HIGH>;
++			color = <LED_COLOR_ID_BLUE>;
++			function = LED_FUNCTION_WLAN_2GHZ;
++		};
++
++		led_wlan5g: wlan5g {
++			label = "c526a:blue:wlan5g";
++			gpios = <&tlmm 3 GPIO_ACTIVE_HIGH>;
++			color = <LED_COLOR_ID_BLUE>;
++			function = LED_FUNCTION_WLAN_5GHZ;
++		};
++	};
++
++	watchdog {
++		compatible = "linux,wdt-gpio";
++		gpios = <&tlmm 59 GPIO_ACTIVE_HIGH>;
++		hw_algo = "toggle";
++		hw_margin_ms = <30000>;
++		always-running;
++	};
++};
++
++&blsp_dma {
++	status = "okay";
++};
++
++&blsp1_i2c3 {
++	status = "okay";
++};
++
++&blsp1_spi1 {
++	status = "okay";
++
++	flash@0 {
++		compatible = "jedec,spi-nor";
++		reg = <0>;
++		spi-max-frequency = <24000000>;
++
++		partitions {
++			compatible = "fixed-partitions";
++			#address-cells = <1>;
++			#size-cells = <1>;
++
++			partition@0 {
++				label = "0:SBL1";
++				reg = <0x0 0x40000>;
++				read-only;
++			};
++
++			partition@40000 {
++				label = "0:MIBIB";
++				reg = <0x40000 0x20000>;
++				read-only;
++			};
++
++			partition@60000 {
++				label = "0:QSEE";
++				reg = <0x60000 0x60000>;
++				read-only;
++			};
++
++			partition@c0000 {
++				label = "0:CDT";
++				reg = <0xc0000 0x10000>;
++				read-only;
++			};
++
++			partition@d0000 {
++				label = "0:DDRPARAMS";
++				reg = <0xd0000 0x10000>;
++				read-only;
++			};
++
++			partition@e0000 {
++				label = "0:APPSBLENV";
++				reg = <0xe0000 0x10000>;
++				read-only;
++			};
++
++			partition@f0000 {
++				label = "0:APPSBL";
++				reg = <0xf0000 0x80000>;
++				read-only;
++			};
++
++			partition@170000 {
++				label = "0:ART";
++				reg = <0x170000 0x10000>;
++				read-only;
++			};
++
++			partition@180000 {
++				label = "0:HLOS";
++				reg = <0x180000 0x300000>;
++			};
++
++			partition@480000 {
++				label = "rootfs";
++				reg = <0x480000 0x3000000>;
++			};
++		};
++	};
++};
++
++&blsp1_uart1 {
++	status = "okay";
++	pinctrl-0 = <&serial_pins>;
++	pinctrl-names = "default";
++};
++
++&crypto {
++	status = "okay";
++};
++
++&crypto_ahash {
++	status = "okay";
++};
++
++&crypto_skcipher {
++	status = "okay";
++};
++
++&ess-switch {
++	status = "okay";
++};
++
++&gmac {
++	status = "okay";
++};
++
++&mdio {
++	status = "okay";
++};
++
++&pcie0 {
++	status = "okay";
++	perst-gpio = <&tlmm 38 GPIO_ACTIVE_LOW>;
++	wake-gpio = <&tlmm 50 GPIO_ACTIVE_LOW>;
++};
++
++&pcie1 {
++	status = "okay";
++	perst-gpio = <&tlmm 39 GPIO_ACTIVE_LOW>;
++	wake-gpio = <&tlmm 51 GPIO_ACTIVE_LOW>;
++};
++
++&pinctrl {
++	serial_pins: serial_pins {
++		mux {
++			pins = "gpio16", "gpio17";
++			function = "blsp_uart0";
++			bias-disable;
++		};
++	};
++};
++
++&prng {
++	status = "okay";
++};
++
++&qpic_bam {
++	status = "okay";
++};
++
++&qpic_nand {
++	status = "okay";
++};
++
++&rng {
++	status = "okay";
++};
++
++&tlmm {
++	serial_pins: serial_pins {
++		mux {
++			pins = "gpio16", "gpio17";
++			function = "blsp_uart0";
++			bias-disable;
++		};
++	};
++};
++
++&usb3 {
++	status = "okay";
++};
++
++&usb3_ss_phy {
++	status = "okay";
++};
++
++&usb3_hs_phy {
++	status = "okay";
++};
++
++&wifi0 {
++	status = "okay";
++	qcom,ath10k-calibration-variant = "C526A";
++};
++
++&wifi1 {
++	status = "okay";
++	qcom,ath10k-calibration-variant = "C526A";
++};
++
++&mdio {
++	status = "okay";
++
++	ethphy0: ethernet-phy@0 {
++		reg = <0>;
++	};
++
++	ethphy1: ethernet-phy@1 {
++		reg = <1>;
++	};
++};
++
++&gmac {
++	status = "okay";
++
++	nvmem-cells = <&macaddr_factory_0>;
++	nvmem-cell-names = "mac-address";
++};
++
++&ess-switch {
++	status = "okay";
++
++	ports {
++		#address-cells = <1>;
++		#size-cells = <0>;
++
++		port@0 {
++			reg = <0>;
++			label = "lan1";
++			phy-handle = <&ethphy0>;
++		};
++
++		port@1 {
++			reg = <1>;
++			label = "lan2";
++			phy-handle = <&ethphy1>;
++		};
++
++		port@2 {
++			reg = <2>;
++			label = "lan3";
++		};
++
++		port@3 {
++			reg = <3>;
++			label = "wan";
++		};
++
++		port@4 {
++			reg = <4>;
++			label = "lan4";
++		};
++	};
++};
++
++&soc {
++	mdio: mdio@90000 {
++		#address-cells = <1>;
++		#size-cells = <0>;
++	};
++
++	ess-switch@c000000 {
++		compatible = "qcom,ipq4019-ess-switch";
++		reg = <0xc000000 0x10000>;
++		interrupts = <0 65 4>;
++	};
++
++	ess-psgmii@98000 {
++		compatible = "qcom,ess-psgmii";
++		reg = <0x98000 0x100>;
++	};
++
++	gmac@c000000 {
++		compatible = "qcom,ipq4019-gmac";
++		reg = <0xc000000 0x10000>;
++		interrupts = <0 65 4>;
++		status = "disabled";
++	};
++};
+diff --git a/target/linux/ipq40xx/image/generic.mk b/target/linux/ipq40xx/image/generic.mk
+index 18b9c1c4b8..4d8f3a2e1c 100644
+--- a/target/linux/ipq40xx/image/generic.mk
++++ b/target/linux/ipq40xx/image/generic.mk
+@@ -285,6 +285,18 @@ define Device/glinet_gl-s1300
+ endef
+ TARGET_DEVICES += glinet_gl-s1300
+ 
++define Device/hiwifi_c526a
++	$(Device/dsa-migration)
++	DEVICE_VENDOR := HiWiFi
++	DEVICE_MODEL := C526A
++	DEVICE_DTS := qcom-ipq4019-c526a
++	DEVICE_PACKAGES := ipq-wifi-hiwifi_c526a kmod-ath10k-ct ath10k-firmware-qca4019-ct
++	IMAGE_SIZE := 128m
++	KERNEL_SIZE := 4096k
++	IMAGES := sysupgrade.bin factory.ubi
++	IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata
++	IMAGE/factory.ubi := append-ubi
++endef
++TARGET_DEVICES += hiwifi_c526a
++
+ define Device/linksys_ea8300
+ 	$(Device/dsa-migration)
+ 	DEVICE_VENDOR := Linksys
+diff --git a/target/linux/ipq40xx/patches-5.10/903-arm-boot-add-dts-files.patch b/target/linux/ipq40xx/patches-5.10/903-arm-boot-add-dts-files.patch
+new file mode 100644
+index 0000000000..b3c4d5e6f7
+--- /dev/null
++++ b/target/linux/ipq40xx/patches-5.10/903-arm-boot-add-dts-files.patch
+@@ -0,0 +1,10 @@
++--- a/arch/arm/boot/dts/Makefile
+++++ b/arch/arm/boot/dts/Makefile
++@@ -750,6 +750,7 @@ dtb-$(CONFIG_ARCH_QCOM) += \
++ 	qcom-ipq4019-ap.dk04.1-c3.dtb \
++ 	qcom-ipq4019-ap.dk07.1-c1.dtb \
++ 	qcom-ipq4019-ap.dk07.1-c2.dtb \
+++	qcom-ipq4019-c526a.dtb \
++ 	qcom-ipq4019-habanero-dvk.dtb \
++ 	qcom-ipq4019-wifi.dtb \
++ 	qcom-ipq4019-ap.dk01.1-c1.dtb \
+-- 
+2.34.1

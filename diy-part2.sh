@@ -23,6 +23,19 @@ EOF
 grep -q '^CONFIG_TARGET_PROFILE="DEVICE_hiwifi_c526a"' .config || { echo "[FATAL] PROFILE 锁定失败"; exit 1; }
 echo "  OK: PROFILE 已锁定"
 
+echo "===== [rpcd-mod-luci] 修复 CMake 版本要求过高 ====="
+RPCD_LUCI_CMAKE="feeds/luci/libs/rpcd-mod-luci/src/CMakeLists.txt"
+if [ -f "$RPCD_LUCI_CMAKE" ]; then
+    # 将 3.31 降回 3.25（与 LEDE 20230609 内置 cmake 版本匹配）
+    sed -i 's/cmake_minimum_required(VERSION 3.31)/cmake_minimum_required(VERSION 3.25)/' "$RPCD_LUCI_CMAKE"
+    # 同时兜底处理 rrdns（同一提交也改了这个包）
+    RPCD_RRDNS_CMAKE="feeds/luci/libs/rpcd-mod-rrdns/src/CMakeLists.txt"
+    [ -f "$RPCD_RRDNS_CMAKE" ] && sed -i 's/cmake_minimum_required(VERSION 3.31)/cmake_minimum_required(VERSION 3.25)/' "$RPCD_RRDNS_CMAKE"
+    echo "  OK: rpcd-mod-luci/rrdns 的 CMake 最低版本已降回 3.25"
+else
+    echo "  [WARN] 未找到 $RPCD_LUCI_CMAKE，跳过"
+fi
+
 echo "===== [3/5] Web 核心与主题 ====="
 # 强制清理 bootstrap
 sed -i '/^CONFIG_PACKAGE_luci-theme-bootstrap/d' .config

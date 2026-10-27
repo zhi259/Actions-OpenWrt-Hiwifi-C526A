@@ -87,6 +87,15 @@ jobs:
       run: |
         cd openwrt
         make defconfig
+
+        # ========== 强制写入设备 Profile（兜底） ==========
+        echo "===== [FIX-PROFILE] 强制写入 hiwifi_c526a ====="
+        sed -i '/CONFIG_TARGET_PROFILE=/d' .config
+        sed -i '/CONFIG_TARGET_ipq40xx_DEVICE_hiwifi_c526a/d' .config
+        echo 'CONFIG_TARGET_PROFILE="DEVICE_hiwifi_c526a"' >> .config
+        echo 'CONFIG_TARGET_ipq40xx_DEVICE_hiwifi_c526a=y' >> .config
+        # ==================================================
+
         # ========== 设备锁定诊断 ==========
         echo "===== [D-DEFCONFIG] 设备锁定复查 ====="
         PROFILE=$(grep '^CONFIG_TARGET_PROFILE=' .config | cut -d'"' -f2)
@@ -99,6 +108,7 @@ jobs:
         grep -q '^CONFIG_PACKAGE_luci-theme-argon=y' .config || { echo "❌ Argon 被 defconfig 清掉了"; exit 1; }
         echo "✅ 设备锁定与关键包正常"
         # ==================================
+
         make download -j8
         find dl -size -1024c -exec ls -l {} \;
         find dl -size -1024c -exec rm -f {} \;

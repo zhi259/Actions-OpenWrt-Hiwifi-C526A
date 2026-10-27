@@ -65,6 +65,22 @@ for bp in feeds/packages/net/baresip/Makefile feeds/telephony/net/baresip/Makefi
 done
 echo "  OK: samba 循环依赖已通过禁用解决"
 
+echo "===== [samba] 同步禁用 autosamba ====="
+# autosamba 硬依赖 luci-app-samba4，没有 samba4 就无法安装
+sed -i '/^CONFIG_PACKAGE_autosamba=y/d' .config
+sed -i '/^CONFIG_DEFAULT_autosamba=y/d' .config
+# 确保 samba 相关包全部禁用（保留上一轮的决定）
+sed -i '/^CONFIG_PACKAGE_luci-app-samba4=y/d' .config
+sed -i '/^CONFIG_PACKAGE_luci-app-samba=y/d' .config
+sed -i '/^CONFIG_PACKAGE_autosamba=y/d' .config
+# 如果 autosamba Makefile 里的依赖仍会触发 WARNING，直接删掉依赖声明
+AUTOSAMBA_MK="package/lean/autosamba/Makefile"
+if [ -f "$AUTOSAMBA_MK" ]; then
+    sed -i 's/+luci-app-samba4//g' "$AUTOSAMBA_MK"
+fi
+echo "  OK: autosamba 和 samba 相关包已全部禁用"
+
+
 echo "===== [5.5/10] 强制修复 R25.10.1 新增循环依赖 ====="
 sed -i '/OPENVPN_.*_ENABLE_DCO/d' .config
 for v in openssl wolfssl mbedtls; do

@@ -99,12 +99,22 @@ done
 
 echo "===== [10/10] 诊断 ====="
 set +e
+
+# 诊断前最后一次强制清理 bootstrap，防止被任何步骤写回
+sed -i '/^CONFIG_PACKAGE_luci-theme-bootstrap/d' .config
+sed -i '/^CONFIG_DEFAULT_luci-theme-bootstrap/d' .config
+
 DIAG_FAIL=0
 for k in CONFIG_PACKAGE_uhttpd-mod-ucode CONFIG_PACKAGE_luci-theme-argon; do
     grep -q "^${k}=y" .config && echo "  [OK] $k" || { echo "  [ERR] $k 缺失"; DIAG_FAIL=1; }
 done
 for k in CONFIG_PACKAGE_luci-app-cpufreq CONFIG_PACKAGE_luci-app-turboacc CONFIG_PACKAGE_luci-theme-bootstrap; do
-    grep -q "^${k}=y" .config && { echo "  [ERR] $k 不应启用"; DIAG_FAIL=1; } || echo "  [OK] $k 已禁用"
+    if grep -q "^${k}=y" .config; then
+        echo "  [ERR] $k 不应启用"
+        DIAG_FAIL=1
+    else
+        echo "  [OK] $k 已禁用"
+    fi
 done
 [ "$DIAG_FAIL" -eq 1 ] && { echo "❌ 诊断失败，终止编译"; exit 1; }
 echo "✅ 诊断通过"

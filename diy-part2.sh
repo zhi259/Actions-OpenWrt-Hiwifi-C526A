@@ -108,26 +108,18 @@ for ovpn in openvpn-openssl openvpn-wolfssl openvpn-mbedtls; do
         sed -i "/CONFIG_PACKAGE_kmod-ovpn-dco/d" .config
     fi
 done
-echo "===== [dnsmasq] 最终强制互斥：确保仅 dnsmasq-full 被启用 ====="
-# 删除所有可能启用基础 dnsmasq 或变体的配置行
-sed -i '/^CONFIG_PACKAGE_dnsmasq=y/d' .config
-sed -i '/^CONFIG_PACKAGE_dnsmasq-dhcpv6=y/d' .config
-sed -i '/^CONFIG_PACKAGE_dnsmasq-nftset=y/d' .config
+echo "===== [dnsmasq] 最终强制互斥检查 ====="
+# 暴力删除所有 dnsmasq 变体
+sed -i '/^CONFIG_PACKAGE_dnsmasq[ =]/d' .config
+sed -i '/^CONFIG_PACKAGE_dnsmasq-dhcpv6[ =]/d' .config
+sed -i '/^CONFIG_PACKAGE_dnsmasq-nftset[ =]/d' .config
 
-# 确保 dnsmasq-full 被显式启用
+# 确保 dnsmasq-full 启用
 grep -q "^CONFIG_PACKAGE_dnsmasq-full=y" .config || echo "CONFIG_PACKAGE_dnsmasq-full=y" >> .config
 
-# 最终验证
-if grep -q "^CONFIG_PACKAGE_dnsmasq=y" .config; then
-    echo "  [FATAL] dnsmasq 仍然启用，互斥失败！"
-    exit 1
-fi
-echo "  OK: 已强制互斥，仅保留 dnsmasq-full"
-
-for pkg in kmod-nf-conntrack-netlink libnetfilter-conntrack3; do
-    grep -q "^CONFIG_PACKAGE_${pkg}=y" .config || echo "CONFIG_PACKAGE_${pkg}=y" >> .config
-done
-
+# 打印当前状态，如果下面有输出，说明清理失败，将直接终止
+echo "  清理后 dnsmasq 相关配置："
+grep "CONFIG_PACKAGE_dnsmasq" .config | grep -v "dnsmasq-full" && { echo "  [FATAL] dnsmasq 残留，终止"; exit 1; }
 echo "===== [10/10] 诊断 ====="
 set +e
 

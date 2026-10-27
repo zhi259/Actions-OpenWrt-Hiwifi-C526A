@@ -108,15 +108,18 @@ for ovpn in openvpn-openssl openvpn-wolfssl openvpn-mbedtls; do
         sed -i "/CONFIG_PACKAGE_kmod-ovpn-dco/d" .config
     fi
 done
-echo "===== [dnsmasq] 强制互斥：禁用 dnsmasq，启用 dnsmasq-full ====="
-# 删除所有可能启用基础版 dnsmasq 的配置行
+echo "===== [dnsmasq] 最终强制互斥：确保仅 dnsmasq-full 被启用 ====="
+# 删除所有可能启用基础 dnsmasq 或变体的配置行
 sed -i '/^CONFIG_PACKAGE_dnsmasq=y/d' .config
+sed -i '/^CONFIG_PACKAGE_dnsmasq-dhcpv6=y/d' .config
 sed -i '/^CONFIG_PACKAGE_dnsmasq-nftset=y/d' .config
-# 确保 dnsmasq-full 被启用
+
+# 确保 dnsmasq-full 被显式启用
 grep -q "^CONFIG_PACKAGE_dnsmasq-full=y" .config || echo "CONFIG_PACKAGE_dnsmasq-full=y" >> .config
-# 验证
+
+# 最终验证
 if grep -q "^CONFIG_PACKAGE_dnsmasq=y" .config; then
-    echo "  [ERR] dnsmasq 仍然启用，互斥失败！"
+    echo "  [FATAL] dnsmasq 仍然启用，互斥失败！"
     exit 1
 fi
 echo "  OK: 已强制互斥，仅保留 dnsmasq-full"

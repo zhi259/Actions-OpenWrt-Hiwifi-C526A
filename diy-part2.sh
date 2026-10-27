@@ -34,10 +34,16 @@ grep -rl 'cmake_minimum_required(VERSION 3.31)' feeds/ | xargs -r sed -i 's/3.31
 # 禁用 HAProxy QUIC（解决 enum ssl_encryption_level_t 缺失导致的编译失败）
 HAPROXY_MK="feeds/packages/net/haproxy/Makefile"
 if [ -f "$HAPROXY_MK" ]; then
-    sed -i 's/ USE_QUIC=1//g' "$HAPROXY_MK"
+    # 使用更通用的模式，确保能匹配 ADDON+=USE_QUIC=1 等形式
+    sed -i 's/USE_QUIC=1//g' "$HAPROXY_MK"
     sed -i 's/USE_QUIC_OPENSSL_COMPAT=1//g' "$HAPROXY_MK"
+    # 清理可能残留的 QUIC 相关配置
     sed -i '/CONFIG_PACKAGE_haproxy.*QUIC/d' .config
-    echo "  OK: HAProxy QUIC 支持已禁用"
+    echo "  OK: HAProxy QUIC 支持已禁用（通用模式）"
+    # 打印修改后的 Makefile 片段，便于确认
+    grep -n "USE_QUIC" "$HAPROXY_MK" || echo "  （Makefile 中已无 USE_QUIC 残留）"
+else
+    echo "  [WARN] 未找到 $HAPROXY_MK，跳过"
 fi
 
 echo "===== [4/10] 清理 ucode-mod / libcrypt-compat 依赖 ====="

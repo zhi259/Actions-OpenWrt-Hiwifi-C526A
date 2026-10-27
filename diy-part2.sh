@@ -118,7 +118,8 @@ sed -i '/^CONFIG_PACKAGE_dnsmasq-nftset=y/d' .config
 grep -q "^CONFIG_PACKAGE_dnsmasq-full=y" .config || echo "CONFIG_PACKAGE_dnsmasq-full=y" >> .config
 
 # 精确验证：只检查基础 dnsmasq 是否被启用（=y），忽略注释和 dnsmasq_full_ 子选项
-DNSMASQ_ENABLED=$(grep -E "^CONFIG_PACKAGE_dnsmasq(=|-dhcpv6=|-nftset=)y" .config 2>/dev/null)
+# 关键：grep 无匹配时返回 1，用 || true 兜底，防止 set -e 提前退出
+DNSMASQ_ENABLED=$(grep -E "^CONFIG_PACKAGE_dnsmasq(=|-dhcpv6=|-nftset=)y" .config 2>/dev/null || true)
 if [ -n "$DNSMASQ_ENABLED" ]; then
     echo "  [FATAL] 基础 dnsmasq 仍被启用："
     echo "$DNSMASQ_ENABLED" | sed 's/^/    /'

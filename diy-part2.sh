@@ -109,19 +109,22 @@ for ovpn in openvpn-openssl openvpn-wolfssl openvpn-mbedtls; do
     fi
 done
 echo "===== [dnsmasq] 最终强制互斥检查 ====="
-# 暴力删除所有 dnsmasq 变体
-sed -i '/^CONFIG_PACKAGE_dnsmasq[ =]/d' .config
-sed -i '/^CONFIG_PACKAGE_dnsmasq-dhcpv6[ =]/d' .config
-sed -i '/^CONFIG_PACKAGE_dnsmasq-nftset[ =]/d' .config
+# 删除所有启用形式的基础 dnsmasq（只删 =y 行，保留 # ... is not set）
+sed -i '/^CONFIG_PACKAGE_dnsmasq=y/d' .config
+sed -i '/^CONFIG_PACKAGE_dnsmasq-dhcpv6=y/d' .config
+sed -i '/^CONFIG_PACKAGE_dnsmasq-nftset=y/d' .config
 
 # 确保 dnsmasq-full 启用
 grep -q "^CONFIG_PACKAGE_dnsmasq-full=y" .config || echo "CONFIG_PACKAGE_dnsmasq-full=y" >> .config
 
-# 打印当前状态，如果下面有输出，说明清理失败，将直接终止
-echo "  清理后 dnsmasq 相关配置："
-grep "CONFIG_PACKAGE_dnsmasq" .config | grep -v "dnsmasq-full" && { echo "  [FATAL] dnsmasq 残留，终止"; exit 1; }
-echo "===== [10/10] 诊断 ====="
-set +e
+# 精确验证：只检查基础 dnsmasq 是否被启用（=y），忽略注释和 dnsmasq_full_ 子选项
+DNSMASQ_ENABLED=$(grep -E "^CONFIG_PACKAGE_dnsmasq(=|-dhcpv6=|-nftset=)y" .config 2>/dev/null)
+if [ -n "$DNSMASQ_ENABLED" ]; then
+    echo "  [FATAL] 基础 dnsmasq 仍被启用："
+    echo "$DNSMASQ_ENABLED" | sed 's/^/    /'
+    exit 1
+fi
+echo "  OK: 基础 dnsmasq 已禁用，仅保留 dnsmasq-full"
 
 # 诊断前最后一次强制清理 bootstrap，防止被任何步骤写回
 sed -i '/^CONFIG_PACKAGE_luci-theme-bootstrap/d' .config

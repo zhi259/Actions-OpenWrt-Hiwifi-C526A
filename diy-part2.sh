@@ -45,13 +45,19 @@ find feeds/luci -type f -name Makefile -exec sed -i -E 's/[+]PACKAGE_ucode-mod-(
 find feeds/luci -type f -name Makefile -exec sed -i 's/+libcrypt-compat//g' {} \; 2>/dev/null || true
 find feeds/packages -type f -name Makefile -exec sed -i 's/+libcrypt-compat//g' {} \; 2>/dev/null || true
 
-echo "===== [5/10] 修复 Kconfig 循环依赖（samba / baresip） ====="
+echo "===== [5/10] 修复 Kconfig 循环依赖（直接禁用 samba） ====="
+# 如果不需要 Samba，直接移除这两个包，彻底消除循环依赖
+sed -i '/CONFIG_PACKAGE_luci-app-samba/d' .config
+sed -i '/CONFIG_PACKAGE_luci-app-samba4/d' .config
+sed -i '/CONFIG_DEFAULT_luci-app-samba/d' .config
+sed -i '/CONFIG_DEFAULT_luci-app-samba4/d' .config
+./scripts/feeds uninstall luci-app-samba luci-app-samba4 2>/dev/null || true
+
+# 保留 baresip 修复（如果需要）
 for bp in feeds/packages/net/baresip/Makefile feeds/telephony/net/baresip/Makefile; do
     [ -f "$bp" ] && sed -i 's/+baresip-mod-avcodec//g' "$bp"
 done
-for sf in feeds/luci/applications/luci-app-samba/Makefile feeds/luci/applications/luci-app-samba4/Makefile; do
-    [ -f "$sf" ] && { sed -i 's/+luci-app-samba4//g' "$sf"; sed -i 's/+luci-app-samba//g' "$sf"; }
-done
+echo "  OK: samba 循环依赖已通过禁用解决"
 
 echo "===== [5.5/10] 强制修复 R25.10.1 新增循环依赖 ====="
 sed -i '/OPENVPN_.*_ENABLE_DCO/d' .config
